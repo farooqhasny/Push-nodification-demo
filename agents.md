@@ -7,7 +7,7 @@ This repository is for a Progressive Web App (PWA) that acts as an alarm termina
 The current Node-RED host is `https://faiztec.duckdns.org/`. The referenced flow is the `node-red-contrib-web-push` demo flow:
 `https://github.com/webmaxru/node-red-contrib-web-push/blob/master/demo-flow.json`.
 
-The repository currently contains documentation only. For the current task, update `agents.md` only; do not generate application code, configuration, or deployment files. When implementation begins later, keep the first version small, testable, and focused on the push subscription lifecycle and alarm presentation.
+The app is a client-only PWA built with TypeScript, Vite, and Lit. It has no custom server-side application components; Node-RED remains the external subscription and push-delivery service. Keep the implementation small, testable, and focused on the push subscription lifecycle and alarm presentation.
 
 ## Integration Contract
 
@@ -79,9 +79,24 @@ When implementing alarm behavior:
 - Make notification click behavior deterministic, including when the app was not open.
 - Do not use browser notification permission as the only source of alarm state. The UI should explain when delivery is disabled or permission is unavailable.
 
+## Mobile App Design Guidelines
+
+Use the provided alarm-terminal screenshot as the visual and interaction reference for the mobile experience. Treat it as a guideline for information hierarchy and operator workflow, not as a requirement to copy branding or exact text.
+
+- Use a clean, compact, mobile-first layout designed for quick scanning during operations.
+- Provide a top app bar with the product identity and a clear live/status indicator.
+- Place the active alarm view first. Show the alarm name, state, timestamp, message or source, and severity in a consistent row layout.
+- Use a strong, consistent severity color system such as yellow for warning, red for critical, and green for normal or informational states. Never communicate severity by color alone; include text or an icon.
+- Keep alarm rows dense but readable, with stable dimensions so long titles and messages do not shift the list unexpectedly. Truncate safely and allow a detail view for complete content.
+- Include an obvious filter or sort control for live status, severity, acknowledgement state, and time where supported by the data.
+- Show the current alarm count and connection or delivery status near the list, using plain language.
+- Use a persistent bottom navigation with Alarms as the primary view, plus Data and Settings views when those features exist.
+- Make touch targets accessible, keep important actions reachable with one hand, and ensure the layout works in portrait and landscape orientations.
+- Keep the visual language operational and restrained: high contrast, clear typography, minimal decoration, and no marketing-style hero content.
+- Make new alarms visually distinct without causing layout instability. Use animation, sound, or vibration only as an enhancement; the alarm state must remain understandable when those features are unavailable.
+
 ## Security and Reliability
 
-- 
 - The public demo flow contains key material; treat it as example material only. If those keys are used anywhere outside a disposable demo, rotate them before relying on the system.
 - Use HTTPS and validate the exact origin used by the frontend. Do not weaken TLS or add permissive CORS as a shortcut.
 - Expect expired, revoked, and invalid subscriptions. Handle a failed registration or send without crashing the PWA and provide actionable status to the operator.
@@ -91,6 +106,7 @@ When implementing alarm behavior:
 
 ## Implementation Conventions
 
+- Use TypeScript, Vite, and Lit for the browser application unless a later requirement justifies a change.
 - Prefer the platform Web Push, Notifications, Service Worker, and Cache APIs unless an existing dependency is clearly justified.
 - Keep API access in one small client module and keep alarm state separate from subscription state.
 - Validate external data at the boundary before rendering it.

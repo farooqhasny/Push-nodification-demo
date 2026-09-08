@@ -18,6 +18,8 @@ type Alarm = {
 const DEFAULT_VAPID_KEY = 'BA7OVhaWCXzaiOqg5EnPn0vJnR4w0UcWalDLqscsM_QlV51fRnPjoTckR8u8t4SrRAAIGfBG8oQjlWOMdkJikTI';
 const DEFAULT_ENDPOINT = 'https://faiztec.duckdns.org/webpush';
 const ALARMS_KEY = 'aog-alarms';
+const ALARM_DB_NAME = 'aog-alarm-terminal';
+const ALARM_STORE_NAME = 'alarms';
 const VAPID_KEY_STORAGE = 'aog-vapid-key';
 const ENDPOINT_STORAGE = 'aog-endpoint';
 
@@ -55,7 +57,7 @@ class AlarmTerminal extends LitElement {
     @media (max-width:520px) { .metrics { grid-template-columns:1fr; } .meta { display:none; } .alarm { grid-template-columns:minmax(0,1fr) 60px; } }
   `;
 
-  connectedCallback() { super.connectedCallback(); void this.registerServiceWorker(); navigator.serviceWorker?.addEventListener('message', this.onWorkerMessage); }
+  connectedCallback() { super.connectedCallback(); navigator.serviceWorker?.addEventListener('message', this.onWorkerMessage); void this.initializeAlarms(); void this.registerServiceWorker(); }
   disconnectedCallback() { navigator.serviceWorker?.removeEventListener('message', this.onWorkerMessage); super.disconnectedCallback(); }
 
   render() {
@@ -84,7 +86,27 @@ class AlarmTerminal extends LitElement {
   private renderDialog(alarm: Alarm) { return html`<dialog open><button class="close" aria-label="Close details" @click=${this.closeDialog}>×</button><span class="eyebrow">${this.severityCode(alarm.severity)} alarm</span><h2>${alarm.title}</h2><p>${alarm.message}</p><p><strong>Source:</strong> ${alarm.source}<br><strong>Received:</strong> ${this.formatTime(alarm.time)}<br><strong>State:</strong> ${alarm.state}</p><div class="actions"><button class="primary" @click=${() => this.acknowledge(alarm.id)} ?disabled=${alarm.state === 'acknowledged'}>${alarm.state === 'acknowledged' ? 'Acknowledged' : 'Acknowledge alarm'}</button><button class="secondary" @click=${this.closeDialog}>Close</button></div></dialog>`; }
 
   private loadAlarms(): Alarm[] { try { return JSON.parse(localStorage.getItem(ALARMS_KEY) || 'null') || seedAlarms; } catch { return seedAlarms; } }
-  private persist() { localStorage.setItem(ALARMS_KEY, JSON.stringify(this.alarms)); }
+  private async initializeAlarms() {
+    try {
+      const stored = await this.readAlarms();
+      if (stored.length) {
+        const current = new Map(this.alarms.map((alarm) => [alarm.id, alarm]));
+        stored.forEach((alarm) => current.set(alarm.id, alarm));
+        this.alarms = [...current.values()].slice(0, 100);
+      } else {
+        await this.writeAlarms(this.alarms);
+      }
+    } catch {
+      this.status = 'Alarm storage unavailable; using local fallback';
+    }
+    this.persistLocalFallback();
+  }
+
+  private persist() { void this.writeAlarms(this.alarms); this.persistLocalFallback(); }
+  private persistLocalFallback() { localStorage.setItem(ALARMS_KEY, JSON.stringify(this.alarms)); }
+  private openAlarmDatabase(): Promise<IDBDatabase> { return new Promise((resolve, reject) => { const request = indexedDB.open(ALARM_DB_NAME, 1); request.onupgradeneeded = () => request.result.createObjectStore(ALARM_STORE_NAME, { keyPath: 'id' }); request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error); }); }
+  private async readAlarms(): Promise<Alarm[]> { const database = await this.openAlarmDatabase(); return new Promise((resolve, reject) => { const request = database.transaction(ALARM_STORE_NAME, 'readonly').objectStore(ALARM_STORE_NAME).getAll(); request.onsuccess = () => resolve(request.result as Alarm[]); request.onerror = () => reject(request.error); }); }
+  private async writeAlarms(alarms: Alarm[]) { const database = await this.openAlarmDatabase(); await new Promise<void>((resolve, reject) => { const transaction = database.transaction(ALARM_STORE_NAME, 'readwrite'); const store = transaction.objectStore(ALARM_STORE_NAME); store.clear(); alarms.forEach((alarm) => store.put(alarm)); transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error); }); database.close(); }
   private filterLabel() { return this.filter === 'all' ? 'All alarms' : this.filter === 'active' ? 'Active only' : 'Acknowledged'; }
   private changeFilter = () => { this.filter = this.filter === 'all' ? 'active' : this.filter === 'active' ? 'acknowledged' : 'all'; this.refresh(); };
   private createTestAlarm = () => { const alarm: Alarm = { id: `local-${Date.now()}`, title: 'LOCAL.TEST_ALARM', message: 'Operator test event', source: 'This device', time: new Date().toISOString(), severity: 'warning', state: 'active' }; this.alarms = [alarm, ...this.alarms].slice(0, 100); this.persist(); this.status = 'Test alarm created'; this.tab = 'alarms'; this.refresh(); };

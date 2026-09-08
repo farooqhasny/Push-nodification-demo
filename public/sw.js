@@ -1,5 +1,6 @@
 const CACHE_NAME = 'aog-alarm-shell-v1';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/icon.svg'];
+const BASE_PATH = new URL('./', self.location.href).pathname;
+const APP_SHELL = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}icon.svg`];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
@@ -16,7 +17,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request).then((response) => response || caches.match('/')))
+    fetch(event.request).catch(() => caches.match(event.request).then((response) => response || caches.match(BASE_PATH)))
   );
 });
 
@@ -47,7 +48,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = new URL('/?alarm=' + encodeURIComponent(event.notification.data?.alarm?.id || ''), self.location.origin).href;
+  const target = new URL('?alarm=' + encodeURIComponent(event.notification.data?.alarm?.id || ''), self.registration.scope).href;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
       const existing = clients.find((client) => 'focus' in client);

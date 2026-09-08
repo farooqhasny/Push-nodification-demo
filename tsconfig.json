@@ -8,6 +8,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "experimentalDecorators": true,
+    "types": ["vite/client"],
     "lib": ["ES2022", "DOM", "DOM.Iterable"]
   },
   "include": ["src"]

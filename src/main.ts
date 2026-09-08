@@ -149,7 +149,7 @@ export class AlarmTerminal extends LitElement {
   private async initializePush() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) { this.status = 'Push unavailable in this browser'; return; }
     try {
-      const registration = await navigator.serviceWorker.register('/sw.js');
+      const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
       this.subscription = await registration.pushManager.getSubscription();
       this.connected = Boolean(this.subscription && Notification.permission === 'granted');
       if (this.connected) this.status = 'Push subscription active';

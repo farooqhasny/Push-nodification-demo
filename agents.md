@@ -39,6 +39,18 @@ The notification node uses notification data containing at least a title and bod
 
 Do not assume the Node-RED editor root page is the API response. Use the explicit `/webpush` endpoint. Confirm the deployed route, CORS policy, and payload shape before changing the client contract.
 
+## VAPID Configuration
+
+Use this public VAPID key as the initial default:
+
+```text
+BA7OVhaWCXzaiOqg5EnPn0vJnR4w0UcWalDLqscsM_QlV51fRnPjoTckR8u8t4SrRAAIGfBG8oQjlWOMdkJikTI
+```
+
+The app must allow the public VAPID key to be changed from a clearly labeled Settings tab. Store the selected public key locally, validate it before subscribing, and use the current value for future `PushManager.subscribe()` calls. If the key changes, explain that an existing browser subscription may need to be unsubscribed and recreated.
+
+The public key is safe to expose in client configuration. Never expose or store the corresponding private VAPID key in the app, repository, browser bundle, or browser storage.
+
 ## PWA Requirements
 
 - Serve the app and service worker over HTTPS in production. `localhost` is acceptable for local development.

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aog-alarm-shell-v1';
+const CACHE_NAME = 'aog-alarm-shell-v2';
 const BASE_PATH = new URL('./', self.location.href).pathname;
 const APP_SHELL = [BASE_PATH, `${BASE_PATH}manifest.webmanifest`, `${BASE_PATH}icon.svg`];
 

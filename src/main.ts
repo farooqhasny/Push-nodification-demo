@@ -1,209 +1,130 @@
 import { LitElement, css, html } from 'lit';
-import { customElement, state } from 'lit/decorators.js';
-import './styles.css';
+import { state } from 'lit/decorators.js';
 
-type Tab = 'alarms' | 'data' | 'settings';
 type Severity = 'critical' | 'warning' | 'normal';
-type AlarmState = 'active' | 'acknowledged' | 'cleared';
+type AlarmState = 'active' | 'acknowledged';
 
-interface Alarm {
+type Alarm = {
   id: string;
   title: string;
-  body: string;
+  message: string;
   source: string;
-  timestamp: string;
+  time: string;
   severity: Severity;
   state: AlarmState;
-}
+};
 
-const DEFAULT_VAPID_KEY = 'BA7OVhaWCXzaiOqg5EnPn0vJnR4w0UcWalDLqscsM_QlV51fRnPjoTckR8u8t4SrRAAIGfBG8oQjlWOMdkJikTI';
-const NODE_RED_ENDPOINT = 'https://faiztec.duckdns.org/webpush';
-const STORAGE_KEY = 'aog-alarm-terminal';
+const VAPID_KEY = 'BA7OVhaWCXzaiOqg5EnPn0vJnR4w0UcWalDLqscsM_QlV51fRnPjoTckR8u8t4SrRAAIGfBG8oQjlWOMdkJikTI';
+const ENDPOINT = 'https://faiztec.duckdns.org/webpush';
+const STORAGE_KEY = 'aog-alarms';
 
-const sampleAlarms: Alarm[] = [
-  { id: 'aog-test-2', title: 'AOG.ALARM_TEST_2', body: 'HH_ALARM_TEST', source: 'Unit AOG', timestamp: '2025-07-11T23:39:46', severity: 'warning', state: 'active' },
-  { id: 'pv-low-low', title: 'Site01.Area02.Fl1001', body: 'Simulated PV / LOW LOW', source: 'Site01.Area02', timestamp: '2025-07-13T00:50:55', severity: 'critical', state: 'active' },
-  { id: 'pv-normal-1', title: 'Site01.Area04.PI4001', body: 'Simulated PV / NORMAL', source: 'Site01.Area04', timestamp: '2025-07-13T02:11:34', severity: 'normal', state: 'acknowledged' },
-  { id: 'pv-normal-2', title: 'Site01.Area05.TI5004', body: 'Simulated PV / NORMAL', source: 'Site01.Area05', timestamp: '2025-07-13T02:11:34', severity: 'normal', state: 'active' },
-  { id: 'pv-normal-3', title: 'Site01.Area05.TI5006', body: 'Simulated PV / NORMAL', source: 'Site01.Area05', timestamp: '2025-07-13T02:19:41', severity: 'normal', state: 'active' }
+const initialAlarms: Alarm[] = [
+  { id: 'aog-test-2', title: 'AOG.ALARM_TEST_2', message: 'HH_ALARM_TEST', source: 'Unit AOG', time: '2025-07-11T23:39:46', severity: 'warning', state: 'active' },
+  { id: 'pv-low-low', title: 'Site01.Area02.Fl1001', message: 'Simulated PV / LOW LOW', source: 'Site01.Area02', time: '2025-07-13T00:50:55', severity: 'critical', state: 'active' },
+  { id: 'pv-normal', title: 'Site01.Area04.PI4001', message: 'Simulated PV / NORMAL', source: 'Site01.Area04', time: '2025-07-13T02:11:34', severity: 'normal', state: 'acknowledged' }
 ];
 
-@customElement('alarm-terminal')
-export class AlarmTerminal extends LitElement {
-  @state() private activeTab: Tab = 'alarms';
-  @state() private alarms: Alarm[] = this.loadAlarms();
+class AlarmTerminal extends LitElement {
+  @state() private alarms = this.loadAlarms();
   @state() private filter: 'all' | AlarmState = 'all';
-  @state() private vapidKey = localStorage.getItem('aog-vapid-key') || DEFAULT_VAPID_KEY;
-  @state() private endpoint = localStorage.getItem('aog-endpoint') || NODE_RED_ENDPOINT;
-  @state() private status = 'Ready for alarms';
-  @state() private connected = false;
-  @state() private subscription: PushSubscription | null = null;
-  @state() private saving = false;
+  @state() private tab: 'alarms' | 'settings' = 'alarms';
+  @state() private status = 'Local alarm terminal ready';
+  @state() private pushEnabled = false;
+  @state() private busy = false;
 
-  static styles = css` :host { display: block; } `;
+  static styles = css`
+    :host { display: block; min-height: 100vh; color: #172024; font-family: Arial, sans-serif; }
+    * { box-sizing: border-box; }
+    main { min-height: 100vh; max-width: 820px; margin: 0 auto; padding-bottom: 96px; background: #f4f6f7; }
+    header { display: flex; align-items: center; gap: 12px; padding: 18px; background: #172024; color: #fff; }
+    .mark { width: 34px; height: 34px; display: grid; place-items: center; background: #f5cc00; color: #172024; font-weight: 900; transform: rotate(45deg); }
+    .mark span { transform: rotate(-45deg); }
+    .brand { display: grid; gap: 3px; }.brand strong { font-size: 20px; letter-spacing: .08em; }.brand small { color: #b8c4c8; font-size: 10px; letter-spacing: .12em; }
+    .status { margin-left: auto; color: #9ee2b5; font-size: 12px; font-weight: 700; }
+    section { padding: 22px 16px; }.heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 16px; }.eyebrow { color: #637176; font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; } h1 { margin: 5px 0 0; font-size: 30px; line-height: 1; }
+    button { border: 0; border-radius: 7px; padding: 11px 14px; font: inherit; font-weight: 700; cursor: pointer; }.filter { background: #e2e8ea; color: #172024; }.primary { background: #172024; color: #fff; }.secondary { background: #dceff4; color: #0b647d; }
+    .summary { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 9px; color: #667479; font-size: 12px; }.list { overflow: hidden; border: 1px solid #d4dde0; border-radius: 8px; background: #fff; }.alarm { display: grid; grid-template-columns: minmax(0, 1fr) auto 60px; min-height: 92px; border-bottom: 1px solid #e1e7e9; cursor: pointer; }.alarm:last-child { border-bottom: 0; }.alarm:hover { background: #f7fafb; }.details { min-width: 0; padding: 13px 10px; }.details h2 { overflow: hidden; margin: 0 0 4px; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }.details p { overflow: hidden; margin: 0 0 5px; color: #59686d; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }.details time, .source { color: #7a878b; font-size: 11px; }.meta { display: grid; align-content: center; justify-items: end; gap: 4px; padding: 8px; text-align: right; font-size: 11px; }.meta strong { font-size: 12px; }.severity { display: grid; place-content: center; gap: 3px; color: #fff; text-align: center; font-size: 12px; }.severity b { font-size: 16px; }.critical { background: #e93545; }.warning { background: #e0a900; }.normal { background: #20a94b; }.acknowledged { opacity: .65; }.empty { padding: 40px 20px; color: #68777b; text-align: center; }.create { display: block; margin: 16px auto; background: transparent; color: #086f8b; }
+    form { display: grid; gap: 14px; max-width: 620px; } label { display: grid; gap: 7px; color: #405056; font-size: 13px; font-weight: 700; } input, textarea { width: 100%; border: 1px solid #c8d3d6; border-radius: 7px; padding: 11px; background: #fff; color: #172024; font: inherit; } textarea { min-height: 86px; }.help { color: #637176; font-size: 13px; line-height: 1.5; }.actions { display: flex; flex-wrap: wrap; gap: 10px; }.message { min-height: 20px; color: #147643; font-size: 13px; font-weight: 700; }
+    nav { position: fixed; right: 0; bottom: 0; left: 0; display: flex; justify-content: center; gap: 8px; padding: 10px 14px max(10px, env(safe-area-inset-bottom)); border-top: 1px solid #d4dde0; background: rgba(255,255,255,.96); } nav button { width: min(42vw, 180px); background: transparent; color: #768388; } nav button.active { background: #dceff4; color: #086f8b; }
+    @media (min-width: 700px) { section { padding: 34px 28px; } header { padding-inline: 28px; } }
+  `;
 
   connectedCallback() {
     super.connectedCallback();
-    window.addEventListener('online', this.handleOnline);
-    navigator.serviceWorker?.addEventListener('message', this.handleWorkerMessage);
-    void this.initializePush();
+    void this.registerServiceWorker();
+    navigator.serviceWorker?.addEventListener('message', this.onWorkerMessage);
   }
 
   disconnectedCallback() {
-    window.removeEventListener('online', this.handleOnline);
-    navigator.serviceWorker?.removeEventListener('message', this.handleWorkerMessage);
+    navigator.serviceWorker?.removeEventListener('message', this.onWorkerMessage);
     super.disconnectedCallback();
   }
 
   render() {
-    const activeCount = this.alarms.filter((alarm) => alarm.state === 'active').length;
-    return html`
-      <main class="app-shell">
-        <header class="topbar">
-          <div class="brand-mark" aria-hidden="true"><span></span></div>
-          <div class="brand-copy"><strong>AOG</strong><small>ALARM TERMINAL</small></div>
-          <div class="connection ${this.connected ? 'is-live' : ''}" aria-label=${this.connected ? 'Push connected' : 'Push not connected'}><span></span>${this.connected ? 'Live' : 'Offline'}</div>
-        </header>
-        ${this.activeTab === 'alarms' ? this.renderAlarms(activeCount) : ''}
-        ${this.activeTab === 'data' ? this.renderData(activeCount) : ''}
-        ${this.activeTab === 'settings' ? this.renderSettings() : ''}
-        <nav class="bottom-nav" aria-label="Primary navigation">
-          ${this.navButton('alarms', 'Alarms', '▤')}
-          ${this.navButton('data', 'Data', '▦')}
-          ${this.navButton('settings', 'Settings', '⚙')}
-        </nav>
-        <p class="sr-only" aria-live="polite">${this.status}</p>
-      </main>
-    `;
+    return html`<main>
+      <header><div class="mark"><span>A</span></div><div class="brand"><strong>AOG</strong><small>ALARM TERMINAL</small></div><div class="status">${this.pushEnabled ? 'PUSH LIVE' : 'LOCAL MODE'}</div></header>
+      ${this.tab === 'alarms' ? this.renderAlarms() : this.renderSettings()}
+      <nav aria-label="Main navigation"><button class=${this.tab === 'alarms' ? 'active' : ''} @click=${() => { this.tab = 'alarms'; }}>Alarms</button><button class=${this.tab === 'settings' ? 'active' : ''} @click=${() => { this.tab = 'settings'; }}>Settings</button></nav>
+    </main>`;
   }
 
-  private renderAlarms(activeCount: number) {
+  private renderAlarms() {
     const visible = this.alarms.filter((alarm) => this.filter === 'all' || alarm.state === this.filter);
-    return html`
-      <section class="content" aria-labelledby="alarms-heading">
-        <div class="view-switcher">
-          <div><span class="eyebrow">Operations</span><h1 id="alarms-heading">Alarm queue</h1></div>
-          <button class="filter-button" @click=${this.cycleFilter} aria-label="Change alarm filter">${this.filterLabel()} <span aria-hidden="true">⌄</span></button>
-        </div>
-        <div class="summary-row"><span>Showing ${visible.length} alarms</span><span class="delivery-state"><i></i>${this.status}</span></div>
-        <div class="alarm-list" role="list">
-          ${visible.length ? visible.map((alarm) => this.renderAlarm(alarm)) : html`<div class="empty-state">No alarms match this filter.</div>`}
-        </div>
-        <button class="test-button" @click=${this.createTestAlarm}>＋ Create test alarm</button>
-      </section>
-    `;
+    return html`<section><div class="heading"><div><span class="eyebrow">Operations</span><h1>Alarm queue</h1></div><button class="filter" @click=${this.changeFilter}>${this.filter === 'all' ? 'All alarms' : this.filter}</button></div><div class="summary"><span>${visible.length} alarms</span><span>${this.status}</span></div><div class="list">${visible.length ? visible.map((alarm) => this.renderAlarm(alarm)) : html`<div class="empty">No alarms match this filter.</div>`}</div><button class="create" @click=${this.createTestAlarm}>+ Create test alarm</button></section>`;
   }
 
   private renderAlarm(alarm: Alarm) {
-    return html`
-      <article class="alarm-row ${alarm.state}" role="listitem" @click=${() => this.openAlarm(alarm)}>
-        <div class="alarm-main"><h2 title=${alarm.title}>${alarm.title}</h2><time>${this.formatTime(alarm.timestamp)}</time><p>${alarm.body}</p></div>
-        <div class="alarm-meta"><strong>${this.stateLabel(alarm.state)}</strong><span>${alarm.source}</span></div>
-        <div class="severity severity-${alarm.severity}"><b>${this.severityLabel(alarm.severity)}</b><small>${alarm.state}</small></div>
-      </article>
-    `;
-  }
-
-  private renderData(activeCount: number) {
-    return html`<section class="content page-panel"><span class="eyebrow">Data</span><h1>Terminal health</h1><div class="metric-grid"><div><span>Active alarms</span><strong>${activeCount}</strong></div><div><span>Delivery</span><strong>${this.connected ? 'Live' : 'Off'}</strong></div><div><span>Stored events</span><strong>${this.alarms.length}</strong></div></div><p class="muted">Alarm history is kept on this device for continuity. Push delivery is handled by the browser service worker.</p></section>`;
+    return html`<article class="alarm ${alarm.state}" @click=${() => this.acknowledge(alarm.id)}><div class="details"><h2>${alarm.title}</h2><p>${alarm.message}</p><time>${this.formatTime(alarm.time)}</time></div><div class="meta"><strong>${alarm.state === 'active' ? 'Active' : 'Ack'}</strong><span class="source">${alarm.source}</span></div><div class="severity ${alarm.severity}"><b>${alarm.severity === 'critical' ? 'P1' : alarm.severity === 'warning' ? 'P10' : 'P15'}</b><small>${alarm.state}</small></div></article>`;
   }
 
   private renderSettings() {
-    return html`<section class="content page-panel" aria-labelledby="settings-heading"><span class="eyebrow">Configuration</span><h1 id="settings-heading">Settings</h1><form @submit=${this.saveSettings}><label>Node-RED endpoint<input .value=${this.endpoint} @input=${this.onEndpointInput} type="url" required /></label><label>Public VAPID key<textarea .value=${this.vapidKey} @input=${this.onVapidInput} rows="3" required spellcheck="false"></textarea></label><p class="help">The public key is safe to store locally. Changing it may require unsubscribing and subscribing again.</p><div class="settings-actions"><button class="primary-button" type="submit" ?disabled=${this.saving}>${this.saving ? 'Saving...' : 'Save settings'}</button><button class="secondary-button" type="button" @click=${this.subscribe}>${this.subscription ? 'Refresh push' : 'Enable push'}</button></div><p class="settings-status">${this.status}</p></form></section>`;
+    return html`<section><div class="heading"><div><span class="eyebrow">Configuration</span><h1>Settings</h1></div></div><form @submit=${this.enablePush}><label>Node-RED endpoint<input type="url" .value=${ENDPOINT} readonly></label><label>Public VAPID key<textarea readonly>${VAPID_KEY}</textarea></label><p class="help">Push permission is requested only when you press the button. The public key is safe to use in the browser.</p><div class="actions"><button class="primary" ?disabled=${this.busy}>${this.busy ? 'Connecting...' : this.pushEnabled ? 'Push enabled' : 'Enable push notifications'}</button></div><p class="message">${this.status}</p></form></section>`;
   }
 
-  private navButton(tab: Tab, label: string, icon: string) {
-    return html`<button class=${this.activeTab === tab ? 'active' : ''} @click=${() => { this.activeTab = tab; }} aria-current=${this.activeTab === tab ? 'page' : 'false'}><span aria-hidden="true">${icon}</span><small>${label}</small></button>`;
+  private loadAlarms(): Alarm[] {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || initialAlarms; } catch { return initialAlarms; }
   }
 
-  private renderAlarmDetail(alarm: Alarm) {
-    const acknowledged = alarm.state === 'acknowledged';
-    const dialog = document.createElement('dialog');
-    dialog.className = 'alarm-dialog';
-    dialog.innerHTML = `<form method="dialog"><button class="close-dialog" aria-label="Close">×</button><span class="eyebrow">${this.severityLabel(alarm.severity)} alarm</span><h2>${this.escape(alarm.title)}</h2><p>${this.escape(alarm.body)}</p><small>${this.escape(alarm.source)} · ${this.escape(this.formatTime(alarm.timestamp))}</small><button class="primary-button" value="acknowledge" ${acknowledged ? 'disabled' : ''}>${acknowledged ? 'Acknowledged' : 'Acknowledge alarm'}</button></form>`;
-    dialog.addEventListener('close', () => { if (dialog.returnValue === 'acknowledge') this.acknowledge(alarm.id); dialog.remove(); });
-    this.shadowRoot?.append(dialog);
-    dialog.showModal();
-  }
+  private persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.alarms)); }
+  private changeFilter = () => { this.filter = this.filter === 'all' ? 'active' : this.filter === 'active' ? 'acknowledged' : 'all'; };
+  private createTestAlarm = () => { this.alarms = [{ id: `local-${Date.now()}`, title: 'LOCAL.TEST_ALARM', message: 'Operator test event', source: 'This device', time: new Date().toISOString(), severity: 'warning', state: 'active' }, ...this.alarms]; this.persist(); this.status = 'Test alarm created'; };
+  private acknowledge = (id: string) => { this.alarms = this.alarms.map((alarm) => alarm.id === id ? { ...alarm, state: 'acknowledged' } : alarm); this.persist(); this.status = 'Alarm acknowledged locally'; };
+  private formatTime = (value: string) => new Date(value).toLocaleString([], { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
-  private openAlarm(alarm: Alarm) { this.renderAlarmDetail(alarm); }
-
-  private acknowledge(id: string) {
-    this.alarms = this.alarms.map((alarm) => alarm.id === id ? { ...alarm, state: 'acknowledged' } : alarm);
-    this.persistAlarms();
-    this.status = 'Alarm acknowledged locally';
-  }
-
-  private createTestAlarm() {
-    const alarm: Alarm = { id: `test-${Date.now()}`, title: 'LOCAL.TEST_ALARM', body: 'Operator test event', source: 'Local terminal', timestamp: new Date().toISOString(), severity: 'warning', state: 'active' };
-    this.addAlarm(alarm);
-    this.status = 'Test alarm created';
-  }
-
-  private addAlarm(alarm: Alarm) {
-    if (this.alarms.some((existing) => existing.id === alarm.id)) return;
-    this.alarms = [alarm, ...this.alarms].slice(0, 100);
-    this.persistAlarms();
-  }
-
-  private async initializePush() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) { this.status = 'Push unavailable in this browser'; return; }
+  private async enablePush(event: SubmitEvent) {
+    event.preventDefault();
+    this.busy = true;
     try {
-      const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
-      this.subscription = await registration.pushManager.getSubscription();
-      this.connected = Boolean(this.subscription && Notification.permission === 'granted');
-      if (this.connected) this.status = 'Push subscription active';
-    } catch { this.status = 'Service worker registration failed'; }
-  }
-
-  private async subscribe() {
-    this.saving = true;
-    try {
-      if (!this.vapidKey.trim() || this.vapidKey.trim().length < 80) throw new Error('Enter a valid public VAPID key.');
-      if (Notification.permission === 'denied') throw new Error('Notifications are blocked in browser settings.');
+      if (!('Notification' in window) || !('PushManager' in window)) throw new Error('Push is not supported by this browser.');
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') throw new Error('Notification permission was not granted.');
       const registration = await navigator.serviceWorker.ready;
-      this.subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: this.urlBase64ToUint8Array(this.vapidKey.trim()) });
-      await this.sendSubscription('subscribe', this.subscription);
-      this.connected = true;
+      const subscription = await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: this.decodeKey(VAPID_KEY) });
+      const response = await fetch(ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'subscribe', subscription: subscription.toJSON() }) });
+      if (!response.ok) throw new Error(`Node-RED returned HTTP ${response.status}`);
+      this.pushEnabled = true;
       this.status = 'Push subscription active';
-    } catch (error) { this.status = error instanceof Error ? error.message : 'Could not enable push'; }
-    finally { this.saving = false; }
+    } catch (error) { this.status = error instanceof Error ? error.message : 'Push setup failed'; }
+    this.busy = false;
   }
 
-  private async unsubscribe() {
-    if (!this.subscription) return;
-    await this.sendSubscription('unsubscribe', this.subscription);
-    await this.subscription.unsubscribe();
-    this.subscription = null;
-    this.connected = false;
-    this.status = 'Push subscription removed';
+  private async registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      const registration = await navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+      const subscription = await registration.pushManager.getSubscription();
+      this.pushEnabled = Boolean(subscription && 'Notification' in window && Notification.permission === 'granted');
+    } catch { this.status = 'Ready for local alarms'; }
   }
 
-  private async sendSubscription(action: 'subscribe' | 'unsubscribe', subscription: PushSubscription) {
-    const response = await fetch(this.endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, subscription: subscription.toJSON() }) });
-    if (!response.ok) throw new Error(`Node-RED returned HTTP ${response.status}`);
-  }
+  private onWorkerMessage = (event: MessageEvent) => {
+    if (event.data?.type !== 'alarm') return;
+    this.alarms = [{ ...event.data.alarm, message: event.data.alarm.body || event.data.alarm.message || 'Alarm received', time: event.data.alarm.timestamp || new Date().toISOString(), state: 'active' }, ...this.alarms];
+    this.persist();
+    this.status = 'New alarm received';
+  };
 
-  private async saveSettings(event: SubmitEvent) {
-    event.preventDefault();
-    localStorage.setItem('aog-vapid-key', this.vapidKey.trim());
-    localStorage.setItem('aog-endpoint', this.endpoint.trim());
-    this.status = 'Settings saved locally';
-  }
-
-  private loadAlarms(): Alarm[] { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || sampleAlarms; } catch { return sampleAlarms; } }
-  private persistAlarms() { localStorage.setItem(STORAGE_KEY, JSON.stringify(this.alarms)); }
-  private handleOnline = () => { this.status = 'Online'; };
-  private handleWorkerMessage = (event: MessageEvent) => { if (event.data?.type === 'alarm') { this.addAlarm({ ...event.data.alarm, state: 'active' }); this.status = 'New alarm received'; } };
-  private cycleFilter = () => { this.filter = this.filter === 'all' ? 'active' : this.filter === 'active' ? 'acknowledged' : this.filter === 'acknowledged' ? 'cleared' : 'all'; };
-  private filterLabel() { return this.filter === 'all' ? 'All alarms' : this.filter[0].toUpperCase() + this.filter.slice(1); }
-  private stateLabel(state: AlarmState) { return state === 'active' ? 'Active' : state === 'acknowledged' ? 'Acknowledged' : 'Cleared'; }
-  private severityLabel(severity: Severity) { return severity === 'critical' ? 'P1' : severity === 'warning' ? 'P10' : 'P15'; }
-  private formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.valueOf()) ? value : date.toLocaleString([], { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }); }
-  private onVapidInput = (event: Event) => { this.vapidKey = (event.target as HTMLTextAreaElement).value; };
-  private onEndpointInput = (event: Event) => { this.endpoint = (event.target as HTMLInputElement).value; };
-  private escape(value: string) { return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character] || character); }
-  private urlBase64ToUint8Array(value: string) { const padding = '='.repeat((4 - value.length % 4) % 4); const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0)); }
+  private decodeKey(value: string) { const padding = '='.repeat((4 - value.length % 4) % 4); const base64 = (value + padding).replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(base64), (character) => character.charCodeAt(0)); }
 }
+
+customElements.define('alarm-terminal', AlarmTerminal);

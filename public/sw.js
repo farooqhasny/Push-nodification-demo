@@ -31,12 +31,11 @@ self.addEventListener('push', (event) => {
       timestamp: String(data.timestamp || new Date().toISOString())
     };
 
-    try {
-      await saveAlarm(alarm);
-    } catch {}
-    await self.registration.showNotification(alarm.title, { body: alarm.body, tag: `alarm-${alarm.id}`, requireInteraction: true, data: { alarm } });
+    const storagePromise = saveAlarm(alarm).catch(() => undefined);
+    const notificationPromise = self.registration.showNotification(alarm.title, { body: alarm.body, tag: `alarm-${alarm.id}`, requireInteraction: true, data: { alarm } });
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     clients.forEach((client) => client.postMessage({ type: 'alarm', alarm }));
+    await Promise.all([notificationPromise, storagePromise]);
   })());
 });
 

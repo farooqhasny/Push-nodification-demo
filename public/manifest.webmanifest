@@ -4,6 +4,7 @@
   "description": "A focused web push alarm terminal.",
   "start_url": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#f7f8f9",
   "theme_color": "#f7f8f9",
   "icons": [
